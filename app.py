@@ -15,6 +15,10 @@ COMPUTE_COST = float(os.environ.get("COMPUTE_COST_INR", "0.05"))
 FEE_RATE = 0.02 * 1.18                                         # Razorpay 2% + 18% GST (conservative)
 DB_PATH = os.environ.get("DB_PATH", "morie.db")
 MAX_CODE = 3000
+BIZ = os.environ.get("BUSINESS_NAME", "MORIE")
+EMAIL = os.environ.get("CONTACT_EMAIL", "")
+PHONE = os.environ.get("CONTACT_PHONE", "")
+ADDRESS = os.environ.get("CONTACT_ADDRESS", "")
 
 app = Flask(__name__)
 
@@ -52,12 +56,14 @@ textarea{width:100%;height:200px;font-family:monospace;font-size:14px}
 button{padding:12px 20px;font-size:16px;margin-top:8px}pre{background:#111;color:#0f0;padding:12px;
 white-space:pre-wrap;min-height:60px}small{color:#666}</style></head><body>
 <h2>MORIE runs your Python</h2>
+<p>An automated online service that runs a short Python program you paste in and shows you its output instantly. Price: ₹{{price}} per run.</p>
 <p id="st"><small>loading...</small></p>
 <textarea id="code" placeholder="print('hello')">print("hello from MORIE")</textarea>
 <button id="go">Pay ₹{{price}} and run</button>
 <h4>Output</h4><pre id="out">(nothing yet)</pre>
 <small>Max {{maxc}} characters, 5 seconds, no files kept. Do not submit harmful or illegal code.
 Payment is taken before the code runs. No refunds for code that errors.</small>
+<p><small><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/refund">Refunds</a> · <a href="/shipping">Delivery</a> · <a href="/contact">Contact</a></small></p>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
 const $=id=>document.getElementById(id);
@@ -128,3 +134,75 @@ def api_run():
     with db() as c:
         c.execute("UPDATE orders SET status='done', output=? WHERE id=?", (out, oid))
     return jsonify(output=out)
+
+
+# ---------- policy pages (Razorpay asks for these before approving a website) ----------
+from markupsafe import escape, Markup
+
+DOC = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{{title}} - {{biz}}</title>
+<style>body{font-family:system-ui;max-width:640px;margin:0 auto;padding:16px;line-height:1.5}</style></head>
+<body><p><a href="/">&larr; Home</a></p><h2>{{title}}</h2>{{body}}
+<hr><small>{{biz}}</small></body></html>"""
+
+
+def doc(title, html):
+    return render_template_string(DOC, title=title, body=Markup(html), biz=BIZ)
+
+
+def contact_lines():
+    out = []
+    if EMAIL: out.append(f"Email: {escape(EMAIL)}")
+    if PHONE: out.append(f"Phone: {escape(PHONE)}")
+    if ADDRESS: out.append(f"Address: {escape(ADDRESS)}")
+    return "<br>".join(out) or "Contact details will be added soon."
+
+
+@app.get("/terms")
+def terms():
+    return doc("Terms and Conditions", f"""
+<p>{escape(BIZ)} ("we") provides an automated online service that runs short Python programs submitted by you
+and returns the output. By using it you agree to these terms.</p>
+<p><b>Price:</b> Rs {PRICE:g} per run, paid in advance through Razorpay. Prices may change; the price shown at payment applies.</p>
+<p><b>Limits:</b> up to {MAX_CODE} characters of code and 5 seconds of run time per run. No files are kept.</p>
+<p><b>Your responsibility:</b> do not submit harmful, illegal or abusive code, or code that attacks other systems or people.
+We may refuse or stop any run and may block misuse without refund.</p>
+<p><b>Availability:</b> the service is provided as is, without guarantees. It may be slow or unavailable at times.
+Our liability is limited to the amount you paid for the affected run.</p>
+<p><b>Law:</b> these terms are governed by the laws of India.</p>
+<p>Questions: <br>{contact_lines()}</p>""")
+
+
+@app.get("/privacy")
+def privacy():
+    return doc("Privacy Policy", f"""
+<p>We collect only what is needed to run the service: the code you submit, its output, and the payment order and
+payment ID. Payments are handled by Razorpay; we never see or store your card, UPI or bank details.</p>
+<p>We use this information only to run your code, confirm your payment and keep our accounts. We do not sell or share
+it, except with Razorpay for payment processing or when required by law.</p>
+<p>Do not put passwords, personal data or secrets in your code. To ask us to delete your stored code and output,
+contact us: <br>{contact_lines()}</p>""")
+
+
+@app.get("/refund")
+def refund():
+    return doc("Refund and Cancellation Policy", f"""
+<p>Each run is paid for before it runs and starts immediately, so a run cannot be cancelled once started.</p>
+<p><b>We refund you</b> if your payment succeeded but the run could not be done because of a fault on our side,
+or if you were charged twice for one run. Contact us within 7 days with your payment ID.</p>
+<p><b>We do not refund</b> runs where the output is an error caused by your own code, a timeout caused by your own code,
+or a run stopped for misuse.</p>
+<p>Approved refunds are sent to the original payment method; your bank may take a few business days to show it.</p>
+<p>Contact: <br>{contact_lines()}</p>""")
+
+
+@app.get("/shipping")
+def shipping():
+    return doc("Delivery Policy", """
+<p>This is a digital service. Nothing is shipped. The output of your code is shown on the page within seconds after
+your payment succeeds. If you paid but saw no output, contact us using the details on the Contact page.</p>""")
+
+
+@app.get("/contact")
+def contact():
+    return doc("Contact Us", f"<p><b>{escape(BIZ)}</b></p><p>{contact_lines()}</p>")
